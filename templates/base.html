@@ -189,7 +189,6 @@
   <!-- Settings Modal -->
   <div id="settings-modal"
        x-data="settingsModal()"
-       x-init="init()"
        @open-settings="open()"
        @keydown.escape.window="if(show) show=false"
        x-show="show"
@@ -269,66 +268,6 @@
     </div>
   </div>
 
-  <script>
-  function settingsModal() {
-    return {
-      show: false,
-      title: '',
-      scanRoot: '',
-      saving: false,
-      browsing: false,
-      error: '',
-
-      async init() {
-        const res = await fetch('/api/config');
-        const cfg = await res.json();
-        this.title    = cfg.title    || '';
-        this.scanRoot = cfg.scan_root || '';
-      },
-
-      async open() {
-        await this.init();
-        this.error = '';
-        this.show  = true;
-      },
-
-      async browse() {
-        this.browsing = true;
-        this.error = '';
-        try {
-          const res  = await fetch('/api/browse', { method: 'POST' });
-          const data = await res.json();
-          if (data.path) this.scanRoot = data.path;
-          else this.error = data.error || 'No folder selected';
-        } catch(e) {
-          this.error = e.message;
-        } finally {
-          this.browsing = false;
-        }
-      },
-
-      async save() {
-        this.saving = true;
-        this.error  = '';
-        try {
-          const res  = await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: this.title, scan_root: this.scanRoot }),
-          });
-          const data = await res.json();
-          if (!res.ok) { this.error = data.error || 'Save failed'; return; }
-          window.location.reload();
-        } catch(e) {
-          this.error = e.message;
-        } finally {
-          this.saving = false;
-        }
-      },
-    };
-  }
-  </script>
-
   <!-- Page content -->
   <main class="flex-1 overflow-auto">
     {% block content %}{% endblock %}
@@ -339,6 +278,63 @@
       const url = new URL(window.location.href);
       url.searchParams.set('report', ts);
       window.location.href = url.toString();
+    }
+
+    function settingsModal() {
+      return {
+        show: false,
+        title: '',
+        scanRoot: '',
+        saving: false,
+        browsing: false,
+        error: '',
+
+        async open() {
+          // Load current config only when the modal is actually opened
+          try {
+            const res = await fetch('/api/config');
+            const cfg = await res.json();
+            this.title    = cfg.title    || '';
+            this.scanRoot = cfg.scan_root || '';
+          } catch(e) { /* ignore, fields stay as-is */ }
+          this.error = '';
+          this.show  = true;
+        },
+
+        async browse() {
+          this.browsing = true;
+          this.error = '';
+          try {
+            const res  = await fetch('/api/browse', { method: 'POST' });
+            const data = await res.json();
+            if (data.path) this.scanRoot = data.path;
+            else this.error = data.error || 'No folder selected';
+          } catch(e) {
+            this.error = e.message;
+          } finally {
+            this.browsing = false;
+          }
+        },
+
+        async save() {
+          this.saving = true;
+          this.error  = '';
+          try {
+            const res  = await fetch('/api/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: this.title, scan_root: this.scanRoot }),
+            });
+            const data = await res.json();
+            if (!res.ok) { this.error = data.error || 'Save failed'; return; }
+            window.location.reload();
+          } catch(e) {
+            this.error = e.message;
+          } finally {
+            this.saving = false;
+          }
+        },
+      };
     }
   </script>
   {% block scripts %}{% endblock %}

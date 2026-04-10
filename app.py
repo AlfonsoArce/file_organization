@@ -379,7 +379,7 @@ def api_browse():
         )
         if result.returncode != 0:
             return jsonify({"error": "No folder selected"}), 400
-        chosen = result.stdout.strip().rstrip("/")
+        chosen = str(Path(result.stdout.strip()))
         return jsonify({"path": chosen})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

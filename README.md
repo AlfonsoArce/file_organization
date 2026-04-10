@@ -2,6 +2,14 @@
 
 A local web app to scan, visualize, and explore your iCloud Drive — see what's taking up space, which files are cloud-only vs. downloaded, and navigate directly to any file in Finder.
 
+## Screenshots
+
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
+
+### File Explorer
+![File Explorer](screenshots/file_explorer.png)
+
 ## Features
 
 - **Full iCloud scan** — walks the entire iCloud Drive tree, records every file with size, type, timestamps, and download status
@@ -37,6 +45,7 @@ file_organization/
 ├── output/           # Generated reports (gitignored)
 │   ├── inventory_YYYYMMDD_HHMMSS.csv
 │   └── summary_YYYYMMDD_HHMMSS.json
+├── screenshots/      # UI screenshots for documentation
 ├── pyproject.toml    # uv project config & dependencies
 └── uv.lock           # Locked dependency versions
 ```

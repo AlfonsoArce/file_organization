@@ -18,7 +18,8 @@ The Storage Map panel at the bottom shows a squarified treemap of your iCloud Dr
 - **Dashboard** — summary cards, category breakdown, top extensions by size (bar chart), top folders by size (bar chart), top 20 largest files, and a D3 treemap (Storage Map) with per-block size labels
 - **File Explorer** — paginated, sortable, filterable table with search, category, extension, directory, and download-status filters
 - **Click-through navigation** — click any chart bar, folder, extension, or file row to jump to a pre-filtered File Explorer view
-- **Reveal in Finder** — click any file in the explorer to open its parent folder in macOS Finder (works for both local and cloud-only placeholder files)
+- **File actions menu** — click any file row to open a context menu with options to reveal in Finder or permanently delete the file (with confirmation dialog)
+- **Reveal in Finder** — open the file's parent folder in macOS Finder directly from the browser (works for both local and cloud-only placeholder files)
 - **Cloud-only detection** — correctly identifies files evicted from local storage using both the legacy `.icloud` placeholder suffix and the modern macOS `UF_DATALESS` filesystem flag
 - **Multiple reports** — each scan creates a timestamped CSV + JSON summary; switch between reports via the UI dropdown
 - **Live scan UI** — trigger a new scan from the browser, watch live log output, and auto-refresh when complete

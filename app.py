@@ -306,6 +306,32 @@ def reveal_in_finder():
         return jsonify({"error": str(e)}), 500
 
 
+# ── File management ───────────────────────────────────────────────────────────
+
+@app.route("/api/delete", methods=["POST"])
+def delete_file():
+    """Permanently delete a file from iCloud Drive."""
+    data = request.get_json(silent=True) or {}
+    relative_path = data.get("path", "").strip()
+    if not relative_path:
+        return jsonify({"error": "No path provided"}), 400
+
+    full_path = (ICLOUD_ROOT / relative_path).resolve()
+    try:
+        full_path.relative_to(ICLOUD_ROOT.resolve())
+    except ValueError:
+        return jsonify({"error": "Path outside iCloud root"}), 403
+
+    if not full_path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    try:
+        full_path.unlink()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Scan API ──────────────────────────────────────────────────────────────────
 
 @app.route("/api/scan/start", methods=["POST"])

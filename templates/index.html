@@ -655,13 +655,25 @@ const summaryData = {{ summary | tojson }};
           }
         });
 
-      // Leaf labels
+      // Leaf labels (top-left: folder name)
       leaves.filter(d => (d.x1 - d.x0) > 36 && (d.y1 - d.y0) > 16)
         .append('text')
         .attr('x', 4).attr('y', 12)
         .attr('font-size', '9px').attr('fill', 'rgba(255,255,255,0.82)')
         .attr('pointer-events', 'none')
         .text(d => truncLabel(d.data.name, d.x1 - d.x0 - 8, 9));
+
+      // Leaf size labels (bottom-right)
+      leaves.filter(d => (d.x1 - d.x0) > 42 && (d.y1 - d.y0) > 22)
+        .append('text')
+        .attr('x', d => d.x1 - d.x0 - 4)
+        .attr('y', d => d.y1 - d.y0 - 4)
+        .attr('text-anchor', 'end')
+        .attr('font-size', '8px')
+        .attr('font-family', 'monospace')
+        .attr('fill', 'rgba(255,255,255,0.6)')
+        .attr('pointer-events', 'none')
+        .text(d => truncLabel(fmtBytes(d.data.value), d.x1 - d.x0 - 8, 8));
 
       // Top-level folder labels
       svg.selectAll('.glabel')

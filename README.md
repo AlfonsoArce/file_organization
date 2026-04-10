@@ -7,13 +7,15 @@ A local web app to scan, visualize, and explore your iCloud Drive — see what's
 ### Dashboard
 ![Dashboard](screenshots/dashboard.png)
 
+The Storage Map panel at the bottom shows a squarified treemap of your iCloud Drive. Each block represents a subfolder, sized by storage. The folder name appears top-left and the storage size appears bottom-right. Click any block to open the File Explorer filtered to that folder.
+
 ### File Explorer
 ![File Explorer](screenshots/file_explorer.png)
 
 ## Features
 
 - **Full iCloud scan** — walks the entire iCloud Drive tree, records every file with size, type, timestamps, and download status
-- **Dashboard** — summary cards, category breakdown, top extensions by size (bar chart), top folders by size (bar chart), top 20 largest files, and a D3 treemap (Storage Map)
+- **Dashboard** — summary cards, category breakdown, top extensions by size (bar chart), top folders by size (bar chart), top 20 largest files, and a D3 treemap (Storage Map) with per-block size labels
 - **File Explorer** — paginated, sortable, filterable table with search, category, extension, directory, and download-status filters
 - **Click-through navigation** — click any chart bar, folder, extension, or file row to jump to a pre-filtered File Explorer view
 - **Reveal in Finder** — click any file in the explorer to open its parent folder in macOS Finder (works for both local and cloud-only placeholder files)

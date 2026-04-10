@@ -17,10 +17,46 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-OUTPUT_DIR  = Path(__file__).parent / "output"
-ICLOUD_ROOT = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
+OUTPUT_DIR   = Path(__file__).parent / "output"
+CONFIG_PATH  = Path(__file__).parent / "config.json"
+_ICLOUD_ROOT = Path.home() / "Library/Mobile Documents/com~apple~CloudDocs"
 
 app = Flask(__name__)
+
+
+# ── Config ────────────────────────────────────────────────────────────────────
+
+def _load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"scan_root": str(_ICLOUD_ROOT), "title": "iCloud Inventory"}
+
+
+def _save_config(cfg: dict) -> None:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+
+
+def get_scan_root() -> Path:
+    cfg = _load_config()
+    return Path(cfg.get("scan_root", str(_ICLOUD_ROOT))).expanduser().resolve()
+
+
+def is_icloud_root() -> bool:
+    return get_scan_root() == _ICLOUD_ROOT.resolve()
+
+
+@app.context_processor
+def inject_globals():
+    cfg = _load_config()
+    return {
+        "app_title": cfg.get("title", "iCloud Inventory"),
+        "is_icloud": is_icloud_root(),
+    }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -292,16 +328,59 @@ def reveal_in_finder():
     if not relative_path:
         return jsonify({"error": "No path provided"}), 400
 
-    # Resolve and validate the path stays inside iCloud root
-    full_path = (ICLOUD_ROOT / relative_path).resolve()
+    # Resolve and validate the path stays inside scan root
+    scan_root = get_scan_root()
+    full_path = (scan_root / relative_path).resolve()
     try:
-        full_path.relative_to(ICLOUD_ROOT.resolve())
+        full_path.relative_to(scan_root)
     except ValueError:
-        return jsonify({"error": "Path outside iCloud root"}), 403
+        return jsonify({"error": "Path outside scan root"}), 403
 
     try:
         subprocess.Popen(["open", "-R", str(full_path)])
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Settings API ──────────────────────────────────────────────────────────────
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    cfg = _load_config()
+    cfg["is_icloud"] = is_icloud_root()
+    return jsonify(cfg)
+
+
+@app.route("/api/config", methods=["POST"])
+def api_config_save():
+    data = request.get_json(silent=True) or {}
+    cfg = _load_config()
+    if "scan_root" in data:
+        root = Path(str(data["scan_root"]).strip()).expanduser()
+        if not root.is_dir():
+            return jsonify({"error": "Directory does not exist"}), 400
+        cfg["scan_root"] = str(data["scan_root"]).strip()
+    if "title" in data:
+        title = str(data["title"]).strip()
+        if title:
+            cfg["title"] = title
+    _save_config(cfg)
+    return jsonify({"ok": True, "config": cfg})
+
+
+@app.route("/api/browse", methods=["POST"])
+def api_browse():
+    """Open a native macOS folder picker and return the chosen path."""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", "POSIX path of (choose folder)"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": "No folder selected"}), 400
+        chosen = result.stdout.strip().rstrip("/")
+        return jsonify({"path": chosen})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -316,11 +395,12 @@ def delete_file():
     if not relative_path:
         return jsonify({"error": "No path provided"}), 400
 
-    full_path = (ICLOUD_ROOT / relative_path).resolve()
+    scan_root = get_scan_root()
+    full_path = (scan_root / relative_path).resolve()
     try:
-        full_path.relative_to(ICLOUD_ROOT.resolve())
+        full_path.relative_to(scan_root)
     except ValueError:
-        return jsonify({"error": "Path outside iCloud root"}), 403
+        return jsonify({"error": "Path outside scan root"}), 403
 
     if not full_path.exists():
         return jsonify({"error": "File not found"}), 404
@@ -352,7 +432,7 @@ def scan_start():
 
     inventory_script = Path(__file__).parent / "inventory.py"
     proc = subprocess.Popen(
-        [sys.executable, str(inventory_script)],
+        [sys.executable, str(inventory_script), "--root", str(get_scan_root())],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

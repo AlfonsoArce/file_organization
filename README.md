@@ -14,7 +14,8 @@ The Storage Map panel at the bottom shows a squarified treemap of your iCloud Dr
 
 ## Features
 
-- **Full iCloud scan** — walks the entire iCloud Drive tree, records every file with size, type, timestamps, and download status
+- **Configurable scan folder** — scan any local folder, not just iCloud Drive; set the path and app title from the settings panel (gear icon in the nav)
+- **Full scan** — walks the entire folder tree, records every file with size, type, timestamps, and download status
 - **Dashboard** — summary cards, category breakdown, top extensions by size (bar chart), top folders by size (bar chart), top 20 largest files, and a D3 treemap (Storage Map) with per-block size labels
 - **File Explorer** — paginated, sortable, filterable table with search, category, extension, directory, and download-status filters
 - **Click-through navigation** — click any chart bar, folder, extension, or file row to jump to a pre-filtered File Explorer view
@@ -48,9 +49,10 @@ file_organization/
 ├── output/           # Generated reports (gitignored)
 │   ├── inventory_YYYYMMDD_HHMMSS.csv
 │   └── summary_YYYYMMDD_HHMMSS.json
-├── screenshots/      # UI screenshots for documentation
-├── pyproject.toml    # uv project config & dependencies
-└── uv.lock           # Locked dependency versions
+├── screenshots/          # UI screenshots for documentation
+├── config.example.json   # Example settings file (copy to config.json)
+├── pyproject.toml        # uv project config & dependencies
+└── uv.lock               # Locked dependency versions
 ```
 
 ## Installation
@@ -61,6 +63,7 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/install
 git clone <repo-url>
 cd file_organization
 uv sync
+cp config.example.json config.json   # edit to set your scan folder and title
 ```
 
 ## Usage

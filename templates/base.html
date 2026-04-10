@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}iCloud Inventory{% endblock %}</title>
+  <title>{% block title %}{{ app_title }}{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -137,7 +137,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"/>
         </svg>
       </div>
-      <span class="font-semibold text-sm tracking-wide" style="color:#e6edf3;">iCloud Inventory</span>
+      <span class="font-semibold text-sm tracking-wide" style="color:#e6edf3;">{{ app_title }}</span>
     </div>
 
     <!-- Center nav -->
@@ -156,8 +156,8 @@
       </a>
     </nav>
 
-    <!-- Report selector -->
-    <div class="flex items-center gap-3">
+    <!-- Report selector + settings -->
+    <div class="flex items-center gap-2">
       {% if reports %}
       <div class="relative">
         <select id="global-report-select" class="select-dark pr-8 text-xs" onchange="switchReport(this.value)">
@@ -172,14 +172,169 @@
         </svg>
       </div>
       {% endif %}
+      <button onclick="document.getElementById('settings-modal').dispatchEvent(new CustomEvent('open-settings'))"
+              class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+              style="color:#8b949e;border:1px solid #30363d"
+              onmouseover="this.style.background='#21262d';this.style.color='#e6edf3'"
+              onmouseout="this.style.background='';this.style.color='#8b949e'"
+              title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
     </div>
   </header>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal"
+       x-data="settingsModal()"
+       x-init="init()"
+       @open-settings="open()"
+       @keydown.escape.window="if(show) show=false"
+       x-show="show"
+       x-transition:enter="transition ease-out duration-150"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-100"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       style="background:rgba(0,0,0,0.7);display:none">
+    <div class="rounded-2xl shadow-2xl w-full max-w-md"
+         style="background:#161b22;border:1px solid #30363d"
+         @click.stop>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #30363d">
+        <h2 class="text-base font-semibold" style="color:#e6edf3">Settings</h2>
+        <button @click="show=false" class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+                style="color:#8b949e"
+                onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="px-5 py-5 flex flex-col gap-5">
+
+        <!-- App title -->
+        <div>
+          <label class="block text-xs font-medium mb-1.5" style="color:#8b949e">App Title</label>
+          <input type="text" x-model="title" placeholder="e.g. iCloud Inventory"
+                 class="input-dark" />
+        </div>
+
+        <!-- Scan root -->
+        <div>
+          <label class="block text-xs font-medium mb-1.5" style="color:#8b949e">Scan Folder</label>
+          <div class="flex gap-2">
+            <input type="text" x-model="scanRoot" placeholder="~/path/to/folder"
+                   class="input-dark flex-1 font-mono text-xs" />
+            <button @click="browse()"
+                    class="px-3 py-2 rounded-lg text-sm font-medium flex-shrink-0 transition-colors"
+                    style="background:#21262d;color:#e6edf3;border:1px solid #30363d"
+                    :disabled="browsing"
+                    onmouseover="this.style.background='#2d333b'" onmouseout="this.style.background='#21262d'">
+              <span x-show="!browsing">Browse…</span>
+              <span x-show="browsing">…</span>
+            </button>
+          </div>
+          <p class="text-xs mt-1.5" style="color:#484f58">The folder that will be scanned when you run a new inventory.</p>
+        </div>
+
+        <!-- Error -->
+        <p x-show="error" class="text-xs px-3 py-2 rounded-lg" style="color:#f85149;background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.2)" x-text="error"></p>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="flex justify-end gap-3 px-5 py-4" style="border-top:1px solid #30363d">
+        <button @click="show=false"
+                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style="color:#8b949e;border:1px solid #30363d"
+                onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''">
+          Cancel
+        </button>
+        <button @click="save()"
+                class="btn-primary px-4 py-2 text-sm"
+                :disabled="saving"
+                :style="saving ? 'opacity:0.6;cursor:not-allowed' : ''">
+          <span x-show="!saving">Save</span>
+          <span x-show="saving">Saving…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  function settingsModal() {
+    return {
+      show: false,
+      title: '',
+      scanRoot: '',
+      saving: false,
+      browsing: false,
+      error: '',
+
+      async init() {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        this.title    = cfg.title    || '';
+        this.scanRoot = cfg.scan_root || '';
+      },
+
+      async open() {
+        await this.init();
+        this.error = '';
+        this.show  = true;
+      },
+
+      async browse() {
+        this.browsing = true;
+        this.error = '';
+        try {
+          const res  = await fetch('/api/browse', { method: 'POST' });
+          const data = await res.json();
+          if (data.path) this.scanRoot = data.path;
+          else this.error = data.error || 'No folder selected';
+        } catch(e) {
+          this.error = e.message;
+        } finally {
+          this.browsing = false;
+        }
+      },
+
+      async save() {
+        this.saving = true;
+        this.error  = '';
+        try {
+          const res  = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: this.title, scan_root: this.scanRoot }),
+          });
+          const data = await res.json();
+          if (!res.ok) { this.error = data.error || 'Save failed'; return; }
+          window.location.reload();
+        } catch(e) {
+          this.error = e.message;
+        } finally {
+          this.saving = false;
+        }
+      },
+    };
+  }
+  </script>
 
   <!-- Page content -->
   <main class="flex-1 overflow-auto">
     {% block content %}{% endblock %}
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
   <script>
     function switchReport(ts) {
       const url = new URL(window.location.href);

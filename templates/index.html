@@ -1,0 +1,791 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — iCloud Inventory{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  /* ── Radar / pulse animation ─────────────────────────────────────── */
+  @keyframes radar-spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes ping-out {
+    0%   { transform: scale(0.9); opacity: 0.6; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  @keyframes scan-line {
+    0%   { top: 0; opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+  @keyframes count-pop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+  @keyframes blink-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .radar-ring {
+    position: absolute; inset: 0; border-radius: 9999px;
+    border: 1px solid rgba(88,166,255,0.25);
+    animation: ping-out 2.4s ease-out infinite;
+  }
+  .radar-ring:nth-child(2) { animation-delay: 0.8s; }
+  .radar-ring:nth-child(3) { animation-delay: 1.6s; }
+
+  .radar-arc {
+    position: absolute; inset: -3px; border-radius: 9999px;
+    border: 2px solid transparent;
+    border-top-color: #58a6ff;
+    border-right-color: rgba(88,166,255,0.4);
+    animation: radar-spin 1.2s linear infinite;
+  }
+
+  .count-pop { animation: count-pop 0.3s ease; }
+
+  .blink { animation: blink-dot 1s step-start infinite; }
+
+  .log-line-enter {
+    animation: fade-in-up 0.2s ease forwards;
+  }
+
+  /* Run button pulse when scanning */
+  @keyframes btn-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(88,166,255,0.4); }
+    50%       { box-shadow: 0 0 0 6px rgba(88,166,255,0); }
+  }
+  .btn-scanning { animation: btn-pulse 1.5s ease infinite; }
+
+  /* Modal backdrop */
+  .modal-backdrop {
+    backdrop-filter: blur(8px);
+    background: rgba(13,17,23,0.85);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-6 py-8 max-w-screen-xl mx-auto"
+     x-data="scanManager()"
+     x-init="init()">
+
+  <!-- ── Scan Progress Modal ──────────────────────────────────────────────── -->
+  <div x-show="showModal"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
+       style="display:none">
+
+    <div class="glass rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl"
+         style="border-color:rgba(88,166,255,0.2);"
+         x-transition:enter="transition ease-out duration-250"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100">
+
+      <!-- Modal header -->
+      <div class="px-6 pt-6 pb-4" style="border-bottom:1px solid #30363d">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-4">
+
+            <!-- Animated radar icon -->
+            <div class="relative w-14 h-14 flex items-center justify-center flex-shrink-0">
+              <!-- Ping rings -->
+              <div class="radar-ring" x-show="status==='running'"></div>
+              <div class="radar-ring" x-show="status==='running'"></div>
+              <div class="radar-ring" x-show="status==='running'"></div>
+              <!-- Spinning arc -->
+              <div class="radar-arc" x-show="status==='running'"></div>
+              <!-- Center icon -->
+              <div class="relative z-10 w-10 h-10 rounded-xl flex items-center justify-center"
+                   :style="status==='done' ? 'background:rgba(57,211,83,0.15);border:1px solid rgba(57,211,83,0.4)'
+                          : status==='error' ? 'background:rgba(248,81,73,0.15);border:1px solid rgba(248,81,73,0.4)'
+                          : 'background:rgba(31,111,235,0.2);border:1px solid rgba(88,166,255,0.4)'">
+                <!-- Running: folder scan icon -->
+                <template x-if="status==='running'">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" style="color:#58a6ff" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"/>
+                  </svg>
+                </template>
+                <!-- Done: checkmark -->
+                <template x-if="status==='done'">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" style="color:#56d364" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </template>
+                <!-- Error: X -->
+                <template x-if="status==='error'">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" style="color:#f85149" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </template>
+              </div>
+            </div>
+
+            <div>
+              <h2 class="text-base font-semibold" style="color:#e6edf3"
+                  x-text="status==='running' ? 'Scanning iCloud…'
+                         : status==='done'    ? 'Scan complete!'
+                         : 'Scan stopped'">
+              </h2>
+              <p class="text-xs mt-0.5" style="color:#8b949e"
+                 x-text="status==='running' ? 'Building your file inventory. This may take several minutes.'
+                        : status==='done'    ? 'Redirecting to the new report…'
+                        : 'The scan did not finish successfully.'">
+              </p>
+            </div>
+          </div>
+
+          <!-- Close (only when not running) -->
+          <button x-show="status !== 'running'"
+                  @click="closeModal()"
+                  class="p-1.5 rounded-lg transition-colors hover:bg-white/5"
+                  style="color:#8b949e">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Live stats bar -->
+        <div class="flex items-center gap-6 mt-4">
+          <div>
+            <p class="text-xs uppercase tracking-wider mb-0.5" style="color:#8b949e">Files found</p>
+            <p class="text-xl font-bold font-mono tabular-nums" style="color:#58a6ff"
+               :class="filesScanned > 0 ? 'count-pop' : ''"
+               x-text="filesScanned.toLocaleString()">0</p>
+          </div>
+          <div style="width:1px;height:32px;background:#30363d"></div>
+          <div>
+            <p class="text-xs uppercase tracking-wider mb-0.5" style="color:#8b949e">Elapsed</p>
+            <p class="text-xl font-bold font-mono tabular-nums" style="color:#e6edf3"
+               x-text="fmtElapsed(elapsed)">0s</p>
+          </div>
+          <div style="width:1px;height:32px;background:#30363d"></div>
+          <div>
+            <p class="text-xs uppercase tracking-wider mb-0.5" style="color:#8b949e">Status</p>
+            <div class="flex items-center gap-1.5">
+              <div class="w-1.5 h-1.5 rounded-full"
+                   :class="status==='running' ? 'blink' : ''"
+                   :style="status==='running' ? 'background:#58a6ff'
+                          : status==='done' ? 'background:#56d364'
+                          : 'background:#f85149'"></div>
+              <span class="text-sm font-medium"
+                    :style="status==='running' ? 'color:#58a6ff'
+                           : status==='done' ? 'color:#56d364'
+                           : 'color:#f85149'"
+                    x-text="status === 'running' ? 'Running' : status === 'done' ? 'Done' : 'Stopped'">
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log terminal -->
+      <div id="scan-log"
+           class="font-mono text-xs overflow-y-auto px-5 py-4"
+           style="height:280px;background:#0d1117;color:#8b949e;line-height:1.6;">
+        <template x-for="(line, i) in logLines" :key="i">
+          <div class="log-line-enter whitespace-pre-wrap break-all"
+               :style="line.includes('Scan complete') ? 'color:#56d364;font-weight:600'
+                      : line.includes('✕') || line.includes('Error') ? 'color:#f85149'
+                      : line.includes('→') || line.includes('saved') ? 'color:#3fb950'
+                      : line.includes('Scanned') ? 'color:#e6edf3'
+                      : 'color:#8b949e'"
+               x-text="line || ' '">
+          </div>
+        </template>
+        <!-- Blinking cursor while running -->
+        <div x-show="status==='running'" class="flex items-center gap-1 mt-1">
+          <span style="color:#58a6ff" class="blink">▋</span>
+        </div>
+      </div>
+
+      <!-- Modal footer -->
+      <div class="px-6 py-4 flex justify-end gap-3" style="border-top:1px solid #30363d;background:#161b22">
+        <template x-if="status==='running'">
+          <button @click="cancelScan()"
+                  class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  style="background:rgba(248,81,73,0.1);color:#f85149;border:1px solid rgba(248,81,73,0.3);"
+                  onmouseover="this.style.background='rgba(248,81,73,0.2)'"
+                  onmouseout="this.style.background='rgba(248,81,73,0.1)'">
+            Cancel scan
+          </button>
+        </template>
+        <template x-if="status==='done'">
+          <a :href="newReportTs ? `/?report=${newReportTs}` : '/'"
+             class="btn-primary px-5">
+            View results →
+          </a>
+        </template>
+        <template x-if="status==='error'">
+          <button @click="closeModal()" class="btn-primary px-5">
+            Close
+          </button>
+        </template>
+      </div>
+
+    </div>
+  </div>
+  <!-- ── End Modal ──────────────────────────────────────────────────────────── -->
+
+
+  {% if not summary %}
+  <!-- Empty state -->
+  <div class="flex flex-col items-center justify-center py-32 text-center">
+    <div class="relative w-20 h-20 rounded-2xl mb-6 flex items-center justify-center"
+         style="background:rgba(31,111,235,0.1);border:1px solid rgba(31,111,235,0.3)">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10" style="color:#58a6ff" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"/>
+      </svg>
+    </div>
+    <h2 class="text-xl font-semibold mb-2" style="color:#e6edf3">No inventory found</h2>
+    <p class="text-sm mb-8" style="color:#8b949e;max-width:30rem">
+      Run an inventory scan to catalog your iCloud files. It may take several minutes for large drives.
+    </p>
+    <button @click="startScan()"
+            :disabled="status==='running'"
+            :class="status==='running' ? 'btn-scanning opacity-80 cursor-not-allowed' : ''"
+            class="btn-primary flex items-center gap-2 px-6 py-3 text-base">
+      <template x-if="status!=='running'">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </template>
+      <template x-if="status==='running'">
+        <svg class="w-5 h-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+      </template>
+      <span x-text="status==='running' ? 'Scanning…' : 'Run Inventory Scan'"></span>
+    </button>
+  </div>
+
+  {% else %}
+
+  <!-- Page header -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+    <div>
+      <h1 class="text-2xl font-bold" style="color:#e6edf3">Dashboard</h1>
+      <p class="text-sm mt-1" style="color:#8b949e">
+        Scanned {{ summary.generated_at.replace('T',' ') }} &nbsp;·&nbsp;
+        <span style="color:#484f58">{{ summary.root }}</span>
+      </p>
+    </div>
+    <div class="flex items-center gap-3 self-start sm:self-auto">
+      <a href="/files?report={{ current_ts }}"
+         class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+         style="background:#21262d;color:#e6edf3;border:1px solid #30363d;"
+         onmouseover="this.style.borderColor='rgba(88,166,255,0.4)'"
+         onmouseout="this.style.borderColor='#30363d'">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+        </svg>
+        Browse Files
+      </a>
+      <!-- Run new scan button -->
+      <button @click="startScan()"
+              :disabled="status==='running'"
+              :class="status==='running' ? 'btn-scanning opacity-80 cursor-not-allowed' : ''"
+              class="btn-primary flex items-center gap-2">
+        <template x-if="status!=='running'">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </template>
+        <template x-if="status==='running'">
+          <svg class="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+        </template>
+        <span x-text="status==='running' ? 'Scanning…' : 'New Scan'"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stat-card">
+      <p class="text-xs font-medium uppercase tracking-wider mb-2" style="color:#8b949e">Total Files</p>
+      <p class="text-3xl font-bold" style="color:#e6edf3">{{ "{:,}".format(summary.totals.files) }}</p>
+    </div>
+    <div class="stat-card">
+      <p class="text-xs font-medium uppercase tracking-wider mb-2" style="color:#8b949e">Total Size</p>
+      <p class="text-3xl font-bold" style="color:#58a6ff">{{ summary.totals.size_human }}</p>
+    </div>
+    <div class="stat-card">
+      <p class="text-xs font-medium uppercase tracking-wider mb-2" style="color:#8b949e">Not Downloaded</p>
+      <p class="text-3xl font-bold" style="color:#ffa657">{{ "{:,}".format(summary.totals.not_downloaded_locally) }}</p>
+      {% set pct = (summary.totals.not_downloaded_locally / summary.totals.files * 100) if summary.totals.files else 0 %}
+      <p class="text-xs mt-1" style="color:#8b949e">{{ "%.1f"|format(pct) }}% in cloud only</p>
+    </div>
+    <div class="stat-card">
+      <p class="text-xs font-medium uppercase tracking-wider mb-2" style="color:#8b949e">Scan Errors</p>
+      <p class="text-3xl font-bold" style="color:{% if summary.errors %}#f85149{% else %}#56d364{% endif %}">{{ summary.errors|length }}</p>
+      <p class="text-xs mt-1" style="color:#8b949e">unreadable paths</p>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold mb-4" style="color:#e6edf3">Storage by Category</h3>
+      <div class="relative flex items-center justify-center" style="height:220px">
+        <canvas id="categoryDonut"></canvas>
+        <div class="absolute text-center pointer-events-none">
+          <div class="text-2xl font-bold" style="color:#e6edf3">{{ summary.totals.size_human }}</div>
+          <div class="text-xs" style="color:#8b949e">total</div>
+        </div>
+      </div>
+      <div class="mt-4 grid grid-cols-2 gap-2" id="cat-legend"></div>
+    </div>
+
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold mb-4" style="color:#e6edf3">Top Extensions by Size</h3>
+      <div style="height:260px"><canvas id="extBar"></canvas></div>
+    </div>
+
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold mb-4" style="color:#e6edf3">Top Folders by Size</h3>
+      <div style="height:260px"><canvas id="dirBar"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Bottom row -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Category breakdown -->
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold mb-4" style="color:#e6edf3">Category Breakdown</h3>
+      <table class="w-full text-sm">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d">
+            <th class="text-left pb-2 font-medium" style="color:#8b949e">Category</th>
+            <th class="text-right pb-2 font-medium" style="color:#8b949e">Files</th>
+            <th class="text-right pb-2 font-medium" style="color:#8b949e">Size</th>
+            <th class="pb-2" style="min-width:80px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set total_bytes = summary.totals.size_bytes if summary.totals.size_bytes else 1 %}
+          {% for cat, v in summary.by_category.items() %}
+          <tr class="table-row" style="border-bottom:1px solid rgba(48,54,61,0.5)">
+            <td class="py-2.5 pr-3"><span class="badge cat-{{ cat }}">{{ cat }}</span></td>
+            <td class="py-2.5 text-right font-mono text-xs" style="color:#8b949e">{{ "{:,}".format(v.count) }}</td>
+            <td class="py-2.5 text-right font-mono text-xs pr-3" style="color:#e6edf3">{{ v.size_human }}</td>
+            <td class="py-2.5">
+              <div class="h-1.5 rounded-full" style="background:#21262d">
+                <div class="h-1.5 rounded-full" style="background:#1f6feb;width:{{ [(v.size_bytes / total_bytes * 100), 100]|min }}%"></div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Top 20 largest files -->
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold mb-4" style="color:#e6edf3">Top 20 Largest Files</h3>
+      <div class="overflow-y-auto" style="max-height:340px">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0" style="background:#161b22">
+            <tr style="border-bottom:1px solid #30363d">
+              <th class="text-left pb-2 font-medium" style="color:#8b949e">#</th>
+              <th class="text-left pb-2 font-medium pl-2" style="color:#8b949e">File</th>
+              <th class="text-right pb-2 font-medium" style="color:#8b949e">Size</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in summary.top_20_largest_files %}
+            <tr class="table-row" style="border-bottom:1px solid rgba(48,54,61,0.4);cursor:pointer"
+                onclick="window.location.href='/files?report={{ current_ts }}&search={{ f.path.split('/')[-1] | urlencode }}'">
+              <td class="py-2 pr-2 text-xs" style="color:#484f58">{{ loop.index }}</td>
+              <td class="py-2 pl-2 max-w-xs">
+                <div class="truncate text-xs font-mono" style="color:#79c0ff;max-width:240px" title="{{ f.path }}">{{ f.path.split('/')[-1] }}</div>
+                <div class="truncate text-xs mt-0.5" style="color:#484f58;max-width:240px">{{ '/'.join(f.path.split('/')[:-1]) or '/' }}</div>
+              </td>
+              <td class="py-2 text-right text-xs font-mono font-semibold" style="color:#ffa657;white-space:nowrap">{{ f.size }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- Storage Map treemap -->
+  <div class="glass rounded-xl p-6 mt-6">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h3 class="text-sm font-semibold" style="color:#e6edf3">Storage Map</h3>
+        <p class="text-xs mt-0.5" style="color:#8b949e">Each block is a subfolder — sized by storage, click to explore</p>
+      </div>
+    </div>
+    <div id="treemap-wrap" class="w-full rounded-lg overflow-hidden" style="background:#0d1117">
+      <!-- skeleton while loading -->
+      <div id="treemap-skeleton" class="skeleton w-full rounded-lg" style="height:480px"></div>
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+{% if summary %}
+<script>
+const CAT_COLORS = {
+  image:'#58a6ff', video:'#a371f7', audio:'#56d364',
+  document:'#ffa657', code:'#3fb950', archive:'#f85149', other:'#484f58',
+};
+const summaryData = {{ summary | tojson }};
+
+(function() {
+  const cats   = Object.entries(summaryData.by_category);
+  const labels = cats.map(([k]) => k);
+  const data   = cats.map(([, v]) => v.size_bytes);
+  const colors = labels.map(l => CAT_COLORS[l] || '#484f58');
+  new Chart(document.getElementById('categoryDonut'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: '#161b22', hoverOffset: 6 }] },
+    options: {
+      cutout: '72%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${summaryData.by_category[ctx.label].size_human}  (${summaryData.by_category[ctx.label].count.toLocaleString()} files)` } }
+      }
+    }
+  });
+  const legend = document.getElementById('cat-legend');
+  labels.forEach((l, i) => {
+    const v = summaryData.by_category[l];
+    legend.innerHTML += `<div class="flex items-center gap-1.5"><div class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${colors[i]}"></div><span class="text-xs truncate" style="color:#8b949e">${l}</span><span class="text-xs ml-auto font-mono" style="color:#e6edf3">${v.size_human}</span></div>`;
+  });
+})();
+
+(function() {
+  const top = summaryData.top_extensions.slice(0, 12);
+  const extCanvas = document.getElementById('extBar');
+  new Chart(extCanvas, {
+    type: 'bar',
+    data: { labels: top.map(e => e.ext||'(none)'), datasets: [{ data: top.map(e => e.count), backgroundColor: 'rgba(88,166,255,0.7)', borderColor: 'rgba(88,166,255,1)', borderWidth: 1, borderRadius: 4, hoverBackgroundColor: 'rgba(88,166,255,1)' }] },
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { afterLabel: (ctx) => `  Size: ${top[ctx.dataIndex].size_human}` } }
+      },
+      scales: {
+        x: { ticks: { color:'#8b949e', font:{size:11} }, grid:{ color:'rgba(48,54,61,0.5)' } },
+        y: { ticks: { color:'#8b949e', font:{size:11} }, grid:{ display:false } }
+      },
+      onHover: (event, elements) => {
+        extCanvas.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+      onClick: (event, elements) => {
+        if (!elements.length) return;
+        const ext = top[elements[0].index].ext;
+        if (!ext) return;
+        const ts = {{ current_ts | tojson }};
+        window.location.href = `/files?report=${ts}&ext=${encodeURIComponent(ext)}`;
+      },
+    }
+  });
+})();
+
+(function() {
+  const top = summaryData.top_20_largest_directories.slice(0, 12);
+  const labels = top.map(d => d.directory.length > 22 ? d.directory.slice(0,20)+'…' : d.directory);
+  const dirCanvas = document.getElementById('dirBar');
+  new Chart(dirCanvas, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: top.map(d => d.size_bytes), backgroundColor: 'rgba(163,113,247,0.7)', borderColor: 'rgba(163,113,247,1)', borderWidth: 1, borderRadius: 4, hoverBackgroundColor: 'rgba(163,113,247,1)' }] },
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: (items) => top[items[0].dataIndex].directory, label: (ctx) => `  ${top[ctx.dataIndex].size}` } }
+      },
+      scales: {
+        x: { ticks: { color:'#8b949e', font:{size:11}, callback: (v) => { const gb = v/1073741824; return gb>=1 ? gb.toFixed(1)+' GB' : (v/1048576).toFixed(0)+' MB'; } }, grid:{ color:'rgba(48,54,61,0.5)' } },
+        y: { ticks: { color:'#8b949e', font:{size:11} }, grid:{ display:false } }
+      },
+      onHover: (event, elements) => {
+        dirCanvas.style.cursor = elements.length ? 'pointer' : 'default';
+      },
+      onClick: (event, elements) => {
+        if (!elements.length) return;
+        const dir = top[elements[0].index].directory;
+        const ts  = {{ current_ts | tojson }};
+        window.location.href = `/files?report=${ts}&dir=${encodeURIComponent(dir)}`;
+      },
+    }
+  });
+})();
+</script>
+
+<script>
+(function() {
+  const ts = {{ current_ts | tojson }};
+  if (!ts) return;
+
+  // Warm palette — one hue per top-level folder
+  const HUES = [
+    0, 22, 38, 55, 80, 130, 160, 190, 210, 250,
+    275, 300, 330, 12, 45, 100, 170, 230, 285, 315,
+    8, 30, 65, 140, 200, 260, 340, 18, 50, 120,
+  ];
+
+  function hsl(h, s, l) { return `hsl(${h},${s}%,${l}%)`; }
+
+  function fmtBytes(b) {
+    if (b >= 1e12) return (b / 1e12).toFixed(1) + ' TB';
+    if (b >= 1e9)  return (b / 1e9).toFixed(1)  + ' GB';
+    if (b >= 1e6)  return (b / 1e6).toFixed(1)  + ' MB';
+    if (b >= 1e3)  return (b / 1e3).toFixed(1)  + ' KB';
+    return b + ' B';
+  }
+
+  function truncLabel(text, maxPx, fontSize) {
+    const charW = fontSize * 0.58;
+    const max = Math.floor(maxPx / charW);
+    return text.length <= max ? text : text.slice(0, max - 1) + '…';
+  }
+
+  fetch(`/api/treemap?report=${ts}`)
+    .then(r => r.json())
+    .then(data => {
+      const skeleton = document.getElementById('treemap-skeleton');
+      if (skeleton) skeleton.remove();
+      if (!data.children?.length) return;
+
+      const wrap = document.getElementById('treemap-wrap');
+      const W = wrap.clientWidth;
+      const H = Math.round(Math.min(W * 0.52, 520));
+      wrap.style.height = H + 'px';
+
+      // Assign a hue per top-level dir
+      const hueMap = {};
+      data.children.forEach((d, i) => { hueMap[d.name] = HUES[i % HUES.length]; });
+
+      const root = d3.hierarchy(data)
+        .sum(d => d.value || 0)
+        .sort((a, b) => b.value - a.value);
+
+      d3.treemap()
+        .size([W, H])
+        .paddingOuter(4)
+        .paddingTop(20)
+        .paddingInner(2)
+        .round(true)(root);
+
+      const svg = d3.create('svg')
+        .attr('width', W).attr('height', H)
+        .attr('viewBox', `0 0 ${W} ${H}`)
+        .style('display', 'block');
+
+      // Tooltip
+      const tip = d3.select(document.body).append('div')
+        .style('position', 'fixed').style('pointer-events', 'none')
+        .style('display', 'none').style('z-index', '200')
+        .style('background', 'rgba(13,17,23,0.96)')
+        .style('border', '1px solid rgba(88,166,255,0.3)')
+        .style('border-radius', '8px').style('padding', '10px 14px')
+        .style('font-size', '12px').style('color', '#e6edf3')
+        .style('box-shadow', '0 8px 32px rgba(0,0,0,0.5)');
+
+      // Top-level group backgrounds
+      svg.selectAll('.gbg')
+        .data(root.children || [])
+        .join('rect').attr('class', 'gbg')
+        .attr('x', d => d.x0).attr('y', d => d.y0)
+        .attr('width', d => d.x1 - d.x0).attr('height', d => d.y1 - d.y0)
+        .attr('fill', d => hsl(hueMap[d.data.name], 55, 10))
+        .attr('rx', 4);
+
+      // Leaf tiles
+      const leaves = svg.selectAll('.leaf')
+        .data(root.leaves())
+        .join('g').attr('class', 'leaf')
+        .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+      leaves.append('rect')
+        .attr('width',  d => Math.max(0, d.x1 - d.x0 - 1))
+        .attr('height', d => Math.max(0, d.y1 - d.y0 - 1))
+        .attr('rx', 2)
+        .attr('fill', d => {
+          const h = hueMap[d.parent?.data.name] ?? 0;
+          const siblings = d.parent?.children || [];
+          const rank = siblings.indexOf(d);
+          const t = siblings.length > 1 ? rank / (siblings.length - 1) : 0;
+          // Larger (lower rank) = darker & more saturated; smaller = lighter
+          return hsl(h, 65 - t * 20, 48 + t * 22);
+        })
+        .style('cursor', 'pointer')
+        .on('mouseover', function(event, d) {
+          d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1.5);
+          tip.style('display', 'block').html(
+            `<div style="font-weight:600;color:#58a6ff;margin-bottom:3px">${d.parent?.data.name || ''}</div>` +
+            `<div>${d.data.name}</div>` +
+            `<div style="color:#ffa657;margin-top:5px;font-family:monospace">${fmtBytes(d.data.value)}</div>`
+          );
+        })
+        .on('mousemove', function(event) {
+          tip.style('left', (event.clientX + 14) + 'px').style('top', (event.clientY - 48) + 'px');
+        })
+        .on('mouseout', function() {
+          d3.select(this).attr('stroke', 'none');
+          tip.style('display', 'none');
+        })
+        .on('click', (event, d) => {
+          const dir = d.parent?.data.name;
+          if (dir && dir !== '(root)') {
+            window.location.href = `/files?report=${ts}&dir=${encodeURIComponent(dir)}`;
+          }
+        });
+
+      // Leaf labels
+      leaves.filter(d => (d.x1 - d.x0) > 36 && (d.y1 - d.y0) > 16)
+        .append('text')
+        .attr('x', 4).attr('y', 12)
+        .attr('font-size', '9px').attr('fill', 'rgba(255,255,255,0.82)')
+        .attr('pointer-events', 'none')
+        .text(d => truncLabel(d.data.name, d.x1 - d.x0 - 8, 9));
+
+      // Top-level folder labels
+      svg.selectAll('.glabel')
+        .data((root.children || []).filter(d => (d.x1 - d.x0) > 40))
+        .join('text').attr('class', 'glabel')
+        .attr('x', d => d.x0 + 5).attr('y', d => d.y0 + 14)
+        .attr('font-size', '10px').attr('font-weight', '700')
+        .attr('fill', d => hsl(hueMap[d.data.name], 80, 72))
+        .attr('pointer-events', 'none')
+        .text(d => truncLabel(d.data.name, d.x1 - d.x0 - 10, 10));
+
+      wrap.appendChild(svg.node());
+    });
+})();
+</script>
+{% endif %}
+
+<script>
+function scanManager() {
+  return {
+    status: '{{ "running" if scan_running else "idle" }}',
+    showModal: {{ "true" if scan_running else "false" }},
+    filesScanned: 0,
+    elapsed: 0,
+    logLines: [],
+    newReportTs: null,
+    _pollTimer: null,
+    _prevFileCount: 0,
+
+    async init() {
+      // If a scan was already running when the page loaded, resume polling
+      if (this.status === 'running') {
+        await this.pollStatus();
+        this.startPolling();
+      }
+    },
+
+    async startScan() {
+      const res = await fetch('/api/scan/start', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json();
+        if (err.error === 'Scan already running') {
+          this.status = 'running';
+          this.showModal = true;
+          this.startPolling();
+        }
+        return;
+      }
+      this.status = 'running';
+      this.filesScanned = 0;
+      this.elapsed = 0;
+      this.logLines = [];
+      this.newReportTs = null;
+      this.showModal = true;
+      this.startPolling();
+    },
+
+    startPolling() {
+      if (this._pollTimer) return;
+      this._pollTimer = setInterval(() => this.pollStatus(), 1500);
+    },
+
+    async pollStatus() {
+      try {
+        const res  = await fetch('/api/scan/status');
+        const data = await res.json();
+
+        // Animate file count change
+        if (data.files_scanned !== this._prevFileCount) {
+          this.filesScanned = data.files_scanned;
+          this._prevFileCount = data.files_scanned;
+        }
+        this.elapsed  = data.elapsed ?? 0;
+        this.logLines = data.lines ?? [];
+        this.status   = data.status;
+
+        // Auto-scroll log to bottom
+        this.$nextTick(() => {
+          const log = document.getElementById('scan-log');
+          if (log) log.scrollTop = log.scrollHeight;
+        });
+
+        if (data.status !== 'running') {
+          clearInterval(this._pollTimer);
+          this._pollTimer = null;
+          if (data.status === 'done') {
+            this.newReportTs = data.new_report_ts;
+            // Auto-redirect after 2.5s
+            if (data.new_report_ts) {
+              setTimeout(() => {
+                window.location.href = `/?report=${data.new_report_ts}`;
+              }, 2500);
+            }
+          }
+        }
+      } catch (e) {
+        // Network error — keep polling
+      }
+    },
+
+    async cancelScan() {
+      await fetch('/api/scan/cancel', { method: 'POST' });
+      clearInterval(this._pollTimer);
+      this._pollTimer = null;
+      this.status = 'error';
+      await this.pollStatus();
+    },
+
+    closeModal() {
+      if (this.status !== 'running') {
+        this.showModal = false;
+      }
+    },
+
+    fmtElapsed(secs) {
+      if (!secs && secs !== 0) return '—';
+      const s = Math.round(secs);
+      if (s < 60)  return `${s}s`;
+      if (s < 3600) return `${Math.floor(s/60)}m ${s%60}s`;
+      return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+    },
+  };
+}
+</script>
+<!-- Alpine.js loaded last so scanManager() is always defined when Alpine starts -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+{% endblock %}

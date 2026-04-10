@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment (uv)
+.venv/
+.python-version
+
+# uv lock file — commit this if you want reproducible installs, ignore if not
+# uv.lock
+
+# Inventory output — these are large generated files, not source
+output/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Claude Code session data
+.claude/
+
+# IDE
+.vscode/
+.idea/

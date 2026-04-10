@@ -172,7 +172,7 @@
         </svg>
       </div>
       {% endif %}
-      <button onclick="document.getElementById('settings-modal').dispatchEvent(new CustomEvent('open-settings'))"
+      <button onclick="Settings.open()"
               class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
               style="color:#8b949e;border:1px solid #30363d"
               onmouseover="this.style.background='#21262d';this.style.color='#e6edf3'"
@@ -186,28 +186,18 @@
     </div>
   </header>
 
-  <!-- Settings Modal -->
+  <!-- Settings Modal (plain HTML — driven by vanilla JS, no Alpine dependency) -->
   <div id="settings-modal"
-       x-data="settingsModal()"
-       @open-settings="open()"
-       @keydown.escape.window="if(show) show=false"
-       x-show="show"
-       x-transition:enter="transition ease-out duration-150"
-       x-transition:enter-start="opacity-0"
-       x-transition:enter-end="opacity-100"
-       x-transition:leave="transition ease-in duration-100"
-       x-transition:leave-start="opacity-100"
-       x-transition:leave-end="opacity-0"
        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-       style="background:rgba(0,0,0,0.7);display:none">
+       style="background:rgba(0,0,0,0.7);display:none"
+       onclick="if(event.target===this) Settings.close()">
     <div class="rounded-2xl shadow-2xl w-full max-w-md"
-         style="background:#161b22;border:1px solid #30363d"
-         @click.stop>
+         style="background:#161b22;border:1px solid #30363d">
 
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #30363d">
         <h2 class="text-base font-semibold" style="color:#e6edf3">Settings</h2>
-        <button @click="show=false" class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+        <button onclick="Settings.close()" class="w-7 h-7 rounded flex items-center justify-center transition-colors"
                 style="color:#8b949e"
                 onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -218,51 +208,37 @@
 
       <!-- Body -->
       <div class="px-5 py-5 flex flex-col gap-5">
-
-        <!-- App title -->
         <div>
           <label class="block text-xs font-medium mb-1.5" style="color:#8b949e">App Title</label>
-          <input type="text" x-model="title" placeholder="e.g. iCloud Inventory"
-                 class="input-dark" />
+          <input id="settings-title" type="text" placeholder="e.g. iCloud Inventory" class="input-dark" />
         </div>
-
-        <!-- Scan root -->
         <div>
           <label class="block text-xs font-medium mb-1.5" style="color:#8b949e">Scan Folder</label>
           <div class="flex gap-2">
-            <input type="text" x-model="scanRoot" placeholder="~/path/to/folder"
+            <input id="settings-root" type="text" placeholder="~/path/to/folder"
                    class="input-dark flex-1 font-mono text-xs" />
-            <button @click="browse()"
-                    class="px-3 py-2 rounded-lg text-sm font-medium flex-shrink-0 transition-colors"
+            <button id="settings-browse-btn" onclick="Settings.browse()"
+                    class="px-3 py-2 rounded-lg text-sm font-medium flex-shrink-0"
                     style="background:#21262d;color:#e6edf3;border:1px solid #30363d"
-                    :disabled="browsing"
                     onmouseover="this.style.background='#2d333b'" onmouseout="this.style.background='#21262d'">
-              <span x-show="!browsing">Browse…</span>
-              <span x-show="browsing">…</span>
+              Browse…
             </button>
           </div>
           <p class="text-xs mt-1.5" style="color:#484f58">The folder that will be scanned when you run a new inventory.</p>
         </div>
-
-        <!-- Error -->
-        <p x-show="error" class="text-xs px-3 py-2 rounded-lg" style="color:#f85149;background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.2)" x-text="error"></p>
-
+        <p id="settings-error" class="text-xs px-3 py-2 rounded-lg" style="color:#f85149;background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.2);display:none"></p>
       </div>
 
       <!-- Footer -->
       <div class="flex justify-end gap-3 px-5 py-4" style="border-top:1px solid #30363d">
-        <button @click="show=false"
-                class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        <button onclick="Settings.close()"
+                class="px-4 py-2 rounded-lg text-sm font-medium"
                 style="color:#8b949e;border:1px solid #30363d"
                 onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''">
           Cancel
         </button>
-        <button @click="save()"
-                class="btn-primary px-4 py-2 text-sm"
-                :disabled="saving"
-                :style="saving ? 'opacity:0.6;cursor:not-allowed' : ''">
-          <span x-show="!saving">Save</span>
-          <span x-show="saving">Saving…</span>
+        <button id="settings-save-btn" onclick="Settings.save()" class="btn-primary px-4 py-2 text-sm">
+          Save
         </button>
       </div>
     </div>
@@ -280,62 +256,92 @@
       window.location.href = url.toString();
     }
 
-    function settingsModal() {
-      return {
-        show: false,
-        title: '',
-        scanRoot: '',
-        saving: false,
-        browsing: false,
-        error: '',
+    const Settings = {
+      _el:        () => document.getElementById('settings-modal'),
+      _titleEl:   () => document.getElementById('settings-title'),
+      _rootEl:    () => document.getElementById('settings-root'),
+      _errorEl:   () => document.getElementById('settings-error'),
+      _saveBtn:   () => document.getElementById('settings-save-btn'),
+      _browseBtn: () => document.getElementById('settings-browse-btn'),
 
-        async open() {
-          // Load current config only when the modal is actually opened
-          try {
-            const res = await fetch('/api/config');
-            const cfg = await res.json();
-            this.title    = cfg.title    || '';
-            this.scanRoot = cfg.scan_root || '';
-          } catch(e) { /* ignore, fields stay as-is */ }
-          this.error = '';
-          this.show  = true;
-        },
+      async open() {
+        this._setError('');
+        try {
+          const res = await fetch('/api/config');
+          const cfg = await res.json();
+          this._titleEl().value = cfg.title    || '';
+          this._rootEl().value  = cfg.scan_root || '';
+        } catch(e) { /* keep fields as-is */ }
+        this._el().style.display = 'flex';
+      },
 
-        async browse() {
-          this.browsing = true;
-          this.error = '';
-          try {
-            const res  = await fetch('/api/browse', { method: 'POST' });
-            const data = await res.json();
-            if (data.path) this.scanRoot = data.path;
-            else this.error = data.error || 'No folder selected';
-          } catch(e) {
-            this.error = e.message;
-          } finally {
-            this.browsing = false;
-          }
-        },
+      close() {
+        this._el().style.display = 'none';
+      },
 
-        async save() {
-          this.saving = true;
-          this.error  = '';
-          try {
-            const res  = await fetch('/api/config', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title: this.title, scan_root: this.scanRoot }),
-            });
-            const data = await res.json();
-            if (!res.ok) { this.error = data.error || 'Save failed'; return; }
-            window.location.reload();
-          } catch(e) {
-            this.error = e.message;
-          } finally {
-            this.saving = false;
-          }
-        },
-      };
-    }
+      _setError(msg) {
+        const el = this._errorEl();
+        el.textContent = msg;
+        el.style.display = msg ? 'block' : 'none';
+      },
+
+      _setBusy(btn, label) {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.style.cursor = 'not-allowed';
+        btn.textContent = label;
+      },
+
+      _clearBusy(btn, label) {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        btn.style.cursor = '';
+        btn.textContent = label;
+      },
+
+      async browse() {
+        const btn = this._browseBtn();
+        this._setBusy(btn, '…');
+        this._setError('');
+        try {
+          const res  = await fetch('/api/browse', { method: 'POST' });
+          const data = await res.json();
+          if (data.path) this._rootEl().value = data.path;
+          else this._setError(data.error || 'No folder selected');
+        } catch(e) {
+          this._setError(e.message);
+        } finally {
+          this._clearBusy(btn, 'Browse…');
+        }
+      },
+
+      async save() {
+        const btn = this._saveBtn();
+        this._setBusy(btn, 'Saving…');
+        this._setError('');
+        try {
+          const res  = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title:     this._titleEl().value.trim(),
+              scan_root: this._rootEl().value.trim(),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) { this._setError(data.error || 'Save failed'); return; }
+          window.location.reload();
+        } catch(e) {
+          this._setError(e.message);
+        } finally {
+          this._clearBusy(btn, 'Save');
+        }
+      },
+    };
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && Settings._el().style.display !== 'none') Settings.close();
+    });
   </script>
   {% block scripts %}{% endblock %}
 </body>
